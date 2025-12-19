@@ -79,6 +79,10 @@ public enum TSCertificateVerification {
     /// All certificate verification disabled.
     case none
 
+    /// Certificates will be validated against the trust store, but will not
+    /// be checked to see if they are valid for the given hostname.
+    case noHostnameVerification
+
     /// Certificates will be validated against the trust store and checked
     /// against the hostname of the service we are contacting.
     case fullVerification
@@ -254,9 +258,19 @@ extension TSTLSConfiguration {
                     }
 
                     let trust = sec_trust_copy_ref(sec_trust).takeRetainedValue()
-                    if let trustRootCertificates = trustRoots {
+
+                    // Set custom trust roots if provided
+                    if let trustRootCertificates = self.trustRoots {
                         SecTrustSetAnchorCertificates(trust, trustRootCertificates as CFArray)
                     }
+
+                    // For noHostnameVerification, use a basic SSL policy without hostname checking
+                    if self.certificateVerification == .noHostnameVerification {
+                        // SecPolicyCreateSSL(false, nil) creates a policy that validates the certificate
+                        // chain but does not check hostname (first param = false means no server check)
+                        SecTrustSetPolicies(trust, SecPolicyCreateSSL(false, nil))
+                    }
+
                     if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *) {
                         SecTrustEvaluateAsyncWithError(trust, Self.tlsDispatchQueue) { _, result, error in
                             if let error {
